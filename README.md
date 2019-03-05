@@ -15,19 +15,19 @@ Yeah, I should move to configure and make eventually, but it is easy for now.
 ```./build.sh```
 
 ## Requires
-libconfig
-libpq
-libmysql TODO
-(a CSV library) TODO
+* libconfig
+* libpq
+* libmysql TODO
+* (a CSV library) TODO
 
 ## Execution Model
-Read configuration file
-Run destination->pre's
-Run source->pre's
-Run destination->key
-Run source->data => destination->data
-Run destination->post's
-Run source->post's
+1. Read configuration file
+2. Run destination->pre's
+3. Run source->pre's
+4. Run destination->key
+5. Run source->data => destination->data
+6. Run destination->post's
+7. Run source->post's
 
 ## Example Config
 # Example application configuration
