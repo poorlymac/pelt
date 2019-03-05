@@ -1,4 +1,4 @@
-#PELT
+# PELT
 Very simple high performance c based PELT (Prepare->Extract->Load->Transform) solution
 Warning, this is my first real c program and it is far far from perfect yet, there be bugs !
 
