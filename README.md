@@ -4,14 +4,14 @@ Warning, this is my first real c program and it is far far from perfect yet, the
 
 ## Performance
 On a basic test case these are the evolution of current results 1.6M rows
-| # | Method                          | Source          | Destination     | Time      |
-| - | ------------------------------- | --------------- | --------------- | --------- |
-| A | CREATE TABLE AS SELECT          | PostgreSQL 11.2 | PostgreSQL 11.2 | 11.686s   |
-| B | COPY TO/FROM FILE               | PostgreSQL 11.2 | PostgreSQL 11.2 | 19.809s   |
-| 1 | pelt with 1 commit              | PostgreSQL 11.2 | PostgreSQL 11.2 | 35m7.348s |
-| 2 | pelt with 10,000 commit         | PostgreSQL 11.2 | PostgreSQL 11.2 | 6m55.410s |
-| 3 | pelt with final commit          | PostgreSQL 11.2 | PostgreSQL 11.2 | 6m52.138s |
-| 4 | pelt prepared with final commit | PostgreSQL 11.2 | PostgreSQL 11.2 | 3m37.053s |
+|  #  | Method                          | Source          | Destination     | Time      |
+| --- | ------------------------------- | --------------- | --------------- | --------- |
+|  A  | CREATE TABLE AS SELECT          | PostgreSQL 11.2 | PostgreSQL 11.2 | 11.686s   |
+|  B  | COPY TO/FROM FILE               | PostgreSQL 11.2 | PostgreSQL 11.2 | 19.809s   |
+|  1  | pelt with 1 commit              | PostgreSQL 11.2 | PostgreSQL 11.2 | 35m7.348s |
+|  2  | pelt with 10,000 commit         | PostgreSQL 11.2 | PostgreSQL 11.2 | 6m55.410s |
+|  3  | pelt with final commit          | PostgreSQL 11.2 | PostgreSQL 11.2 | 6m52.138s |
+|  4  | pelt prepared with final commit | PostgreSQL 11.2 | PostgreSQL 11.2 | 3m37.053s |
 
 ## Supported Sources & Destinations
 * PostgreSQL
