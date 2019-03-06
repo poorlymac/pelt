@@ -6,7 +6,7 @@ Warning, this is my first real c program and it is far far from perfect yet, the
 On a basic test case these are the evolution of current results 1.6M rows
 
 |  #  | Method                              | Source          | Destination     | Time      |
-| --- | ----------------------------------- | --------------- | --------------- | --------+ |
+| --- | ----------------------------------- | --------------- | --------------- | --------- |
 |  A  | CREATE TABLE AS SELECT              | PostgreSQL 11.2 | PostgreSQL 11.2 |   11.686s |
 |  B  | \COPY TO/FROM FILE                  | PostgreSQL 11.2 | PostgreSQL 11.2 |   19.809s |
 |  1  | pelt with 1 commit                  | PostgreSQL 11.2 | PostgreSQL 11.2 | 35m7.348s |
