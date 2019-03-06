@@ -3,12 +3,15 @@ Very simple high performance c based PELT (Prepare->Extract->Load->Transform) so
 Warning, this is my first real c program and it is far far from perfect yet, there be bugs !
 
 ## Performance
-On a basic test case these are the current results
-* CREATE TABLE AS SELECT on PostgreSQL 11.2 1.6M rows in 11.686s
-* COPY TO FILE, COPY FROM FILE on PostgreSQL 11.2 to PostgreSQL 11.2 1.6M rows in 19.809s
-* pelt with 1 commit PostgreSQL 11.2 to PostgreSQL 11.2 in 35m7.348s
-* pelt with 10,000 commit PostgreSQL 11.2 to PostgreSQL 11.2 in 6m55.410s
-* pelt with final commit PostgreSQL 11.2 to PostgreSQL 11.2 in 6m52.138s
+On a basic test case these are the evolution of current results 1.6M rows
+| # | Method                          | Source          | Destination     | Time      |
+| - | ------------------------------- | --------------- | --------------- | --------- |
+| A | CREATE TABLE AS SELECT          | PostgreSQL 11.2 | PostgreSQL 11.2 | 11.686s   |
+| B | COPY TO/FROM FILE               | PostgreSQL 11.2 | PostgreSQL 11.2 | 19.809s   |
+| 1 | pelt with 1 commit              | PostgreSQL 11.2 | PostgreSQL 11.2 | 35m7.348s |
+| 2 | pelt with 10,000 commit         | PostgreSQL 11.2 | PostgreSQL 11.2 | 6m55.410s |
+| 3 | pelt with final commit          | PostgreSQL 11.2 | PostgreSQL 11.2 | 6m52.138s |
+| 4 | pelt prepared with final commit | PostgreSQL 11.2 | PostgreSQL 11.2 | 3m37.053s |
 
 ## Supported Sources & Destinations
 * PostgreSQL

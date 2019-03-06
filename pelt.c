@@ -141,6 +141,16 @@ void extract_pq_load_pq(
         }
         PQclear(ins);
 
+        // Prepare
+        const char* stmtName = "PELT_INSERT";
+        PGresult* stmt = PQprepare(
+            conn_destination,
+            stmtName,
+            sqlto,
+            nFields,
+            NULL
+        );
+
         for (int i = 0; i < PQntuples(res); i++) {
             for (int j = 0; j < nFields; j++) {
                 if(PQgetisnull(res, i, j) == 1) {
@@ -150,11 +160,11 @@ void extract_pq_load_pq(
                 }
                 // fprintf(stdout, "Field %i (%i/%i): %s <- %i\n", j+1, i, j, paramValues[j], PQftype(res, j));
             }
-            ins = PQexecParams(
+
+            ins = PQexecPrepared(
                 conn_destination,
-                sqlto,
+                stmtName,
                 nFields,
-                NULL,
                 paramValues,
                 NULL,
                 NULL,
