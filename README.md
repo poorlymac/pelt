@@ -2,6 +2,11 @@
 Very simple high performance c based PELT (Prepare->Extract->Load->Transform) solution
 Warning, this is my first real c program and it is far far from perfect yet, there be bugs !
 
+## Why
+99% of Prepare->Extract->Load->Transform work is database and file, and I struggled to see why
+I needed 1GB+ of application to do what can be done with an app of <1MB and some simple configuration.
+So not finding any suitable and maintained alternatives I started writing my own.
+
 ## Performance
 On a basic test case these are the evolution of current results 1.6M rows
 
