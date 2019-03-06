@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <libconfig.h>
 #include <libpq-fe.h>
+#include <mysql.h>
 
 static void exit_nicely(PGconn *conn1, PGconn *conn2, config_t *cfg, int exitstatus) {
     PQfinish(conn1);
