@@ -91,30 +91,38 @@ void run_blind(const char *type, PGconn *conn, config_setting_t *cfgset) {
     }
 }
 
+void insert_prepare(char *sqlto, int boost, int fields, const char *sql_destination) {
+    sprintf(sqlto, "%s (", sql_destination);
+    int i;
+    for (i = 1; i < fields * boost; i++) {
+        if(i != 0 && (i % fields) == 0) {
+            sprintf(sqlto, "%s$%i),(", sqlto, i);
+        } else {
+            sprintf(sqlto, "%s$%i,", sqlto, i);
+        }
+    }
+    sprintf(sqlto, "%s$%i)", sqlto, i);
+}
+
 void extract_pq_load_pq(
     PGconn *conn_source,      const char *sql_source,     const char *filter,
     PGconn *conn_destination, const char *sql_destination
 ) {
-    PGresult   *res;
-    PGresult   *ins;
+    PGresult  *res;
+    PGresult  *ins;
+    PGresult *stmt;
     int inserted = 0;
     int failed   = 0;
-    int boost    = 200;
+    int boost    = 0;
+    char* stmtName = "PELT_INSERT";
+
     // Run SQL
     if (strstr(sql_source, "$1") != NULL) {
         fprintf(stdout, "Extract SQL: %s using %s\n", sql_source, filter);
         const char *paramValues[1];
         paramValues[0] = filter;
-        res = PQexecParams(
-            conn_source,
-            sql_source,
-            1,
-            NULL,
-            paramValues,
-            NULL,
-            NULL,
-            0 // If 1 we get binary and cannot see integers etc.
-        );
+        // If 1 we get binary and cannot see integers etc.
+        res = PQexecParams(conn_source, sql_source, 1, NULL, paramValues, NULL, NULL,0);
     } else {
         fprintf(stdout, "Extract SQL: %s\n", sql_source);
         res = PQexec(conn_source, sql_source);
@@ -128,27 +136,18 @@ void extract_pq_load_pq(
         // Get result information
         int fields = PQnfields(res);
         int rows   = PQntuples(res);
+        fprintf(stdout, "Rows : %i\n", rows);
 
         // Calculate a suitable boost value
         boost = (65535 - strlen(sql_destination))/fields;
         fprintf(stdout, "Boost set to : %i\n", boost);
 
+        // Create SQL statement
         char sqlto[boost * fields * 10];
-        sprintf(sqlto, "%s (", sql_destination);
-        int i;
-        for (i = 1; i < fields * boost; i++) {
-                if(i != 0 && (i % fields) == 0) {
-                    sprintf(sqlto, "%s$%i),(", sqlto, i);
-                } else {
-                    sprintf(sqlto, "%s$%i,", sqlto, i);
-                }
-        }
-        sprintf(sqlto, "%s$%i)", sqlto, i);
-
-        const char *paramValues[fields];
-        fprintf(stdout, "Rows : %i\n", rows);
+        insert_prepare(sqlto, boost, fields, sql_destination);
 
         // Begin transaction
+        const char *paramValues[fields];
         ins = PQexec(conn_destination, "BEGIN");
         if (PQresultStatus(ins) != PGRES_COMMAND_OK) {
             fprintf(stdout, "BEGIN command failed\n");        
@@ -156,14 +155,10 @@ void extract_pq_load_pq(
         PQclear(ins);
 
         // Prepare
-        char* stmtName = "PELT_INSERT";
-        PGresult* stmt = PQprepare(
-            conn_destination,
-            stmtName,
-            sqlto,
-            fields,
-            NULL
-        );
+        stmt = PQprepare(conn_destination, stmtName, sqlto, fields, NULL);
+        if ( PQresultStatus(stmt) != PGRES_COMMAND_OK ) {
+            fprintf(stderr, "Prepare failed: (%i) %s\n", PQresultStatus(stmt), PQerrorMessage(conn_destination));
+        }
 
         // int rows = PQntuples(res);
         int set  = boost;
@@ -172,29 +167,13 @@ void extract_pq_load_pq(
             if((i + boost) > rows) {
                 // Customise and reprepare down to the remaining rows
                 set = rows - i;
-
-                sprintf(sqlto, "%s (", sql_destination);
-                int i;
-                for (i = 1; i < fields * set; i++) {
-                        if(i != 0 && (i % fields) == 0) {
-                            sprintf(sqlto, "%s$%i),(", sqlto, i);
-                        } else {
-                            sprintf(sqlto, "%s$%i,", sqlto, i);
-                        }
-                }
-                sprintf(sqlto, "%s$%i)", sqlto, i);
+                insert_prepare(sqlto, set, fields, sql_destination);
 
                 // Prepare, need a different name to work
                 stmtName = "PELT_INSERT_LAST";
-                stmt = PQprepare(
-                    conn_destination,
-                    stmtName,
-                    sqlto,
-                    fields,
-                    NULL
-                );
-                if ( PQresultStatus(ins) != PGRES_COMMAND_OK ) {
-                    fprintf(stderr, "Prepare failed: (%i) %s\n", PQresultStatus(ins), PQerrorMessage(conn_source));
+                stmt = PQprepare(conn_destination, stmtName, sqlto, fields, NULL);
+                if ( PQresultStatus(stmt) != PGRES_COMMAND_OK ) {
+                    fprintf(stderr, "Prepare failed: (%i) %s\n", PQresultStatus(stmt), PQerrorMessage(conn_destination));
                 }
             }
             int x = 0;
@@ -209,67 +188,43 @@ void extract_pq_load_pq(
                 }
             }
 
-            ins = PQexecPrepared(
-                conn_destination,
-                stmtName,
-                fields * set,
-                paramValues,
-                NULL,
-                NULL,
-                0
-            );
+            ins = PQexecPrepared(conn_destination, stmtName, fields * set, paramValues, NULL, NULL, 0);
             if ( PQresultStatus(ins) != PGRES_COMMAND_OK ) {
                 failed++;
-                if(notify != 0 && (failed % notify) == 0 && failed != 0) {
-                    fprintf(stdout, "Failed   %i ...\n", failed);
-                }
-                fprintf(stderr, "SQL failed: (%i) %s\n", PQresultStatus(ins), PQerrorMessage(conn_source));
+                if(notify != 0 && (failed % notify) == 0 && failed != 0) fprintf(stdout, "Failed   %i ...\n", failed);
             } else {
                 inserted+=set;
-                if(inserted % (boost * 100) == 0 )
-                    fprintf(stdout, "Inserted %i ...\n", inserted);
+                if(inserted % (boost * 10) == 0 ) fprintf(stdout, "Inserted %i ...\n", inserted);
             }
         }
         if(failed   > 0) fprintf(stdout, "Failed   %i.\n", failed);
         if(inserted > 0) fprintf(stdout, "Inserted %i.\n", inserted);
         ins = PQexec(conn_destination, "COMMIT");
-        if (PQresultStatus(ins) != PGRES_COMMAND_OK) {
-            fprintf(stdout, "COMMIT final failed\n");        
-        }
+        if (PQresultStatus(ins) != PGRES_COMMAND_OK) fprintf(stdout, "COMMIT final failed\n");
         PQclear(ins);
         PQclear(res);
     }
 }
 
 void extract_pq_load_pq_async(
-    PGconn *conn_source, const char *sql_source, const char *filter,
-    PGconn *conn_destination,   const char *sql_destination
+    PGconn *conn_source,      const char *sql_source,     const char *filter,
+    PGconn *conn_destination, const char *sql_destination
 ) {
-    PGresult   *res;
-    PGresult   *ins;
+    PGresult  *res;
+    PGresult  *ins;
+    PGresult *stmt;
     int inserted = 0;
     int failed   = 0;
-    int row      = 0;
-    int fields  = 0;
-    const char* stmtName = "PELT_INSERT";
-    // sprintf(stmtName, "PELT_INSERT_%d", getppid());
+    int boost    = 0;
+    char* stmtName = "PELT_INSERT";
 
     // Run SQL
     if (strstr(sql_source, "$1") != NULL) {
-        // TODO
         fprintf(stdout, "Extract SQL: %s using %s\n", sql_source, filter);
         const char *paramValues[1];
         paramValues[0] = filter;
-        res = PQexecParams(
-            conn_source,
-            sql_source,
-            1,
-            NULL,
-            paramValues,
-            NULL,
-            NULL,
-            0 // If 1 we get binary and cannot see integers etc.
-        );
+        // If 1 we get binary and cannot see integers etc.
+        res = PQexecParams(conn_source, sql_source, 1, NULL, paramValues, NULL, NULL,0);
     } else {
         fprintf(stdout, "Extract SQL: %s\n", sql_source);
         if (!PQsendQuery(conn_source, sql_source)) {
@@ -285,88 +240,91 @@ void extract_pq_load_pq_async(
     // Begin transaction
     ins = PQexec(conn_destination, "BEGIN");
     if (PQresultStatus(ins) != PGRES_COMMAND_OK) {
-        fprintf(stdout, "BEGIN command failed\n");        
+        fprintf(stdout, "BEGIN command failed\n");
     }
     PQclear(ins);
 
     // Loop on rows
-    while ((res = PQgetResult(conn_source))) {
+    int firstrun = 0;
+    int fields   = 0;
+    int rows     = 0;
+    while (1) {
         // Set up and prepare SQL
-        if(row == 0) {
+        if(firstrun == 0) {
+            // Get result information
+            res = PQgetResult(conn_source);
             fields = PQnfields(res);
-            char sqlto[1024];
-            sprintf(sqlto, "%s (", sql_destination);
-            for (int i = 1; i < fields; i++) {
-                    sprintf(sqlto, "%s $%i,", sqlto, i);
-            }
-            sprintf(sqlto, "%s $%i )", sqlto, fields);
-            // fprintf(stdout, "Insert Statement: %s\n", sqlto);
+
+            // TODO: Calculate a suitable boost value
+            boost = 1300;
+            fprintf(stdout, "Boost set to : %i\n", boost);
+
+            // Create SQL statement
+            char sqlto[boost * fields * 10];
+            insert_prepare(sqlto, boost, fields, sql_destination);
 
             // Prepare
-            PGresult* stmt = PQprepare(
-                conn_destination,
-                stmtName,
-                sqlto,
-                fields,
-                NULL
-            );            
-        }
-        
-        // Insert row
-        const char *paramValues[fields];
-        for (int j = 0; j < fields; j++) {
-            if(PQgetisnull(res, 0, j) == 1) {
-                paramValues[j] = NULL;
-            } else {
-                paramValues[j] = PQgetvalue(res, 0, j);
+            stmt = PQprepare(conn_destination, stmtName, sqlto, fields, NULL);
+            if ( PQresultStatus(stmt) != PGRES_COMMAND_OK ) {
+                fprintf(stderr, "Prepare failed: (%i) %s\n", PQresultStatus(stmt), PQerrorMessage(conn_destination));
             }
-            // fprintf(stdout, "Field %i (%i/%i): %s <- %i\n", j+1, i, j, paramValues[j], PQftype(res, j));
         }
-        ins = PQexecPrepared(
-            conn_destination,
-            stmtName,
-            fields,
-            paramValues,
-            NULL,
-            NULL,
-            0
-        );
+        firstrun++;
+
+        // Process each row
+        const char *paramValues[boost * fields];
+        int l = 0;
+        for (int k = 0; k < boost; k++) {
+            for (int j = 0; j < fields; j++) {
+                if(PQgetisnull(res, 0, j) == 1) {
+                    paramValues[l] = NULL;
+                } else {
+                    paramValues[l] = PQgetvalue(res, 0, j);
+                }
+                l++;
+            }
+            res = PQgetResult(conn_source);
+            if(res == NULL) {
+                k = boost;
+            }
+        }
+        // Do insert, checking for l value change
+        if(l == boost * fields) {
+            ins = PQexecPrepared(conn_destination, stmtName, l, paramValues, NULL, NULL, 0);
+        } else {
+            // Reconstruct and do last
+            // Create SQL statement
+            char sqlto[boost * fields * 10];
+            insert_prepare(sqlto, l/fields, fields, sql_destination);
+
+            // Prepare
+            stmtName = "PELT_INSERT_LAST";
+            stmt = PQprepare(conn_destination, stmtName, sqlto, fields, NULL);
+            if ( PQresultStatus(stmt) != PGRES_COMMAND_OK ) {
+                fprintf(stderr, "Prepare failed: (%i) %s\n", PQresultStatus(stmt), PQerrorMessage(conn_destination));
+            }
+        }
         if ( PQresultStatus(ins) != PGRES_COMMAND_OK ) {
             failed++;
-            if(notify != 0 && (failed % notify) == 0 && failed != 0) {
-                fprintf(stdout, "Failed   %i ...\n", failed);
-            }
+            if(notify != 0 && (failed % notify) == 0 && failed != 0) fprintf(stdout, "Failed   %i ...\n", failed);
         } else {
-            inserted++;
-            if(notify != 0 && (inserted % notify) == 0 && inserted != 0) {
-                fprintf(stdout, "Inserted %i ...\n", inserted);
-            }
-            if(commit != 0 && (inserted % notify) == 0 && inserted != 0) {
-                ins = PQexec(conn_destination, "COMMIT");
-                if (PQresultStatus(ins) != PGRES_COMMAND_OK) {
-                    fprintf(stdout, "COMMIT command failed\n");        
-                }
-                PQclear(ins);
-                fprintf(stdout, "Committed %i ...\n", inserted);
-                ins = PQexec(conn_destination, "BEGIN");
-                if (PQresultStatus(ins) != PGRES_COMMAND_OK) {
-                    fprintf(stdout, "BEGIN command failed\n");        
-                }
-                PQclear(ins);
-            }
+            inserted+=l/fields;
+            if(inserted % (boost * 10) == 0 ) fprintf(stdout, "Inserted %i ...\n", inserted);
         }
-        row++;
-    }
 
-    // Summarise and tidy up
-    if(failed   > 0) fprintf(stdout, "Failed   %i.\n", failed  );
-    if(inserted > 0) fprintf(stdout, "Inserted %i.\n", inserted);
-    if(row      > 0) fprintf(stdout, "Rows     %i.\n", row     );
+        // Exit if null
+        if(res == NULL) {
+            break;
+        }
+   }
+
+    // Commit transaction
     ins = PQexec(conn_destination, "COMMIT");
     if (PQresultStatus(ins) != PGRES_COMMAND_OK) {
-        fprintf(stdout, "COMMIT final failed\n");        
-    }
+        fprintf(stdout, "COMMIT command failed\n");        
+    }    
     PQclear(ins);
+
     PQclear(res);
 }
 
