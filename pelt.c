@@ -6,6 +6,9 @@
 #include <libpq-fe.h>
 #include <mysql.h>
 
+int notify;
+int commit;
+
 static void exit_nicely(PGconn *conn1, PGconn *conn2, config_t *cfg, int exitstatus) {
     PQfinish(conn1);
     PQfinish(conn2);
@@ -130,6 +133,14 @@ void extract_pq_load_pq(
 
         const char *paramValues[nFields];
         fprintf(stdout, "Rows : %s\n", PQcmdTuples(res));
+
+        // Begin transaction
+        ins = PQexec(conn_destination, "BEGIN");
+        if (PQresultStatus(ins) != PGRES_COMMAND_OK) {
+            fprintf(stdout, "BEGIN command failed\n");        
+        }
+        PQclear(ins);
+
         for (int i = 0; i < PQntuples(res); i++) {
             for (int j = 0; j < nFields; j++) {
                 if(PQgetisnull(res, i, j) == 1) {
@@ -140,7 +151,7 @@ void extract_pq_load_pq(
                 // fprintf(stdout, "Field %i (%i/%i): %s <- %i\n", j+1, i, j, paramValues[j], PQftype(res, j));
             }
             ins = PQexecParams(
-                conn_source,
+                conn_destination,
                 sqlto,
                 nFields,
                 NULL,
@@ -151,19 +162,37 @@ void extract_pq_load_pq(
             );
             if ( PQresultStatus(ins) != PGRES_COMMAND_OK ) {
                 failed++;
-                if((failed % 10000) == 0 && failed != 0) {
+                if(notify != 0 && (failed % notify) == 0 && failed != 0) {
                     fprintf(stdout, "Failed   %i ...\n", failed);
                 }
             } else {
                 inserted++;
-                if((inserted % 10000) == 0 && inserted != 0) {
+                if(notify != 0 && (inserted % notify) == 0 && inserted != 0) {
                     fprintf(stdout, "Inserted %i ...\n", inserted);
+                }
+                if(commit != 0 && (inserted % notify) == 0 && inserted != 0) {
+                    ins = PQexec(conn_destination, "COMMIT");
+                    if (PQresultStatus(ins) != PGRES_COMMAND_OK) {
+                        fprintf(stdout, "COMMIT command failed\n");        
+                    }
+                    PQclear(ins);
+                    fprintf(stdout, "Committed %i ...\n", inserted);
+                    ins = PQexec(conn_destination, "BEGIN");
+                    if (PQresultStatus(ins) != PGRES_COMMAND_OK) {
+                        fprintf(stdout, "BEGIN command failed\n");        
+                    }
+                    PQclear(ins);
                 }
             }
         }
-        PQclear(res);
         if(failed   > 0) fprintf(stdout, "Failed   %i.\n", failed);
-        if(inserted > 0) fprintf(stdout, "Inserted %i.\n", inserted);     
+        if(inserted > 0) fprintf(stdout, "Inserted %i.\n", inserted);
+        ins = PQexec(conn_destination, "COMMIT");
+        if (PQresultStatus(ins) != PGRES_COMMAND_OK) {
+            fprintf(stdout, "COMMIT final failed\n");        
+        }
+        PQclear(ins);
+        PQclear(res);
     }
 }
 
@@ -204,6 +233,8 @@ int main(int argc, char **argv) {
     const char *key_source;
     const char *date_source;
     const char *key;
+    const char *notify_value;
+    const char *commit_value;
     char destination_conn[256];
     int  destination_port;
     PGconn     *conn_source;
@@ -226,6 +257,15 @@ int main(int argc, char **argv) {
         config_destroy(&cfg);
         return(EXIT_FAILURE);
     }
+
+    // Set the global notify and commit
+    config_lookup_int(&cfg, "notify", &notify);
+    config_lookup_int(&cfg, "commit", &commit);
+    // fprintf(stdout, "Notify %s, Commit %s\n", notify_value, commit_value);
+    // notify = atoi(notify_value);
+    // commit = atoi(commit_value);
+    fprintf(stdout, "Notify Integer %i, Commit Integer %i\n", notify, commit);
+
     // connect to source
     config_lookup_string(&cfg, "source.conn.type", &source_type);
     config_lookup_string(&cfg, "source.conn.host", &source_host);
