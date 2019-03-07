@@ -6,6 +6,7 @@ then
     gcc -O3 -o pelt \
         pelt.c postgres.c extract.c \
         /usr/local/lib/libpq.a \
+        /usr/local/lib/libcsv.a \
         /usr/local/lib/libconfig.a \
         /usr/local/mysql/lib/libmysqlclient.a \
         /usr/local/Cellar/openssl/1.0.2q/lib/libcrypto.a \
@@ -14,5 +15,10 @@ then
         -lkrb5 \
         -I/usr/local/mysql/include
 else
-    gcc -O3 -o pelt -lconfig -lpq -lmysqlclient -L/usr/local/mysql/lib -I/usr/local/mysql/include pelt.c postgres.c extract.c
+    gcc -O3 -o pelt \
+        pelt.c postgres.c extract.c \
+        -lconfig \
+        -lpq \
+        -lcsv \
+        -lmysqlclient -L/usr/local/mysql/lib -I/usr/local/mysql/include
 fi

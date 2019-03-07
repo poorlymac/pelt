@@ -5,6 +5,7 @@
 #include <libconfig.h>
 #include <libpq-fe.h>
 #include <mysql.h>
+#include <csv.h>
 #include "postgres.h"
 #include "extract.h"
 
